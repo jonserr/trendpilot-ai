@@ -1,0 +1,27 @@
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install dependencies for building packages if needed
+RUN apt-get update && apt-get install -y build-essential curl && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast dependency management
+RUN pip install uv
+
+# Copy project files
+COPY pyproject.toml .
+COPY api/ api/
+COPY src/ src/
+COPY config/ config/
+COPY models/ models/
+COPY data/ data/
+COPY tests/ tests/
+
+# Install python dependencies (dev + optional tuning/db extras)
+RUN uv pip install --system -e .[dev,tuning,db]
+
+# Expose API port
+EXPOSE 8000
+
+# Start FastAPI
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]

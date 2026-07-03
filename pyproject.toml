@@ -1,0 +1,49 @@
+[project]
+name = "trendpilot-ai"
+version = "0.2.0"
+description = "A containerized end-to-end machine learning forecasting platform."
+authors = [{ name = "Author" }]
+requires-python = ">=3.10"
+dependencies = [
+    "tensorflow>=2.15.0; sys_platform != 'darwin' or platform_machine != 'arm64'",
+    "tensorflow-macos>=2.15.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "fastapi",
+    "uvicorn",
+    "pydantic>=2",
+    "streamlit",
+    "plotly",
+    "joblib",
+    "requests",
+    "sqlalchemy>=2.0",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "black",
+    "httpx",
+]
+tuning = [
+    "keras-tuner>=1.4",
+    "tensorboard",
+]
+db = [
+    "psycopg2-binary",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.black]
+line-length = 100
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

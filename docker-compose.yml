@@ -1,0 +1,61 @@
+# Host ports default to uncommon values to avoid clashing with other local
+# services (3000/8000/8080/8501 etc.). Override via API_PORT / DASHBOARD_PORT /
+# POSTGRES_PORT in your environment or .env file.
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "${API_PORT:-9173}:8000"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./config:/app/config
+    environment:
+      - PYTHONPATH=/app
+      # Optional: enables PostgreSQL prediction logging (see .env.example)
+      - DATABASE_URL=${DATABASE_URL:-}
+      # Optional: require X-API-Key on API endpoints (see .env.example)
+      - API_KEY=${API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 5s
+
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile.dashboard
+    ports:
+      - "${DASHBOARD_PORT:-9174}:8501"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - ./config:/app/config
+    environment:
+      - API_URL=http://api:8000
+      - PYTHONPATH=/app
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Optional local PostgreSQL for prediction-history logging.
+  # Start with: docker-compose --profile db up -d
+  # Then set: DATABASE_URL=postgresql+psycopg2://trendpilot:trendpilot@db:5432/trendpilot
+  db:
+    image: postgres:16-alpine
+    profiles: ["db"]
+    environment:
+      - POSTGRES_USER=trendpilot
+      - POSTGRES_PASSWORD=trendpilot
+      - POSTGRES_DB=trendpilot
+    ports:
+      - "${POSTGRES_PORT:-9175}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

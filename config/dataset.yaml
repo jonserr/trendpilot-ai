@@ -1,0 +1,54 @@
+# Dataset configuration.
+#
+# The entire pipeline — ingestion validation, feature engineering,
+# preprocessing, training, the inference API, and the dashboard — is driven by
+# this file. To forecast a different dataset, point the pipeline at your own
+# CSV and describe its schema here (or in a copy referenced by the
+# TRENDPILOT_CONFIG environment variable).
+#
+# Requirements for any dataset:
+#   - one row per (entity, date) observation at a regular frequency
+#   - a numeric target column to forecast
+#   - zero or more numeric and categorical driver features
+
+name: housing
+
+# CSV file under data/raw/ (see `make fetch-data` for the bundled real-data
+# feed: Redfin market data + FRED mortgage rates, metro level by default).
+data_file: housing_data.csv
+
+# Column containing the observation date.
+date_col: date
+
+# Numeric column to forecast.
+target_col: median_sale_price
+
+# Finest-grained series identifier. Lag and rolling features are grouped by
+# this column so history never crosses series boundaries. For the bundled
+# housing feed this is the metro name (e.g. "Seattle, WA"), or the ZIP code /
+# county / state when fetched with a different --level.
+entity_col: location
+
+# Optional coarse -> fine grouping used for browsing and filtering in the
+# dashboard and the /entities endpoint. Must end with entity_col.
+entity_hierarchy: [region, location]
+
+# Columns kept in the dataset for display purposes but excluded from the model.
+display_cols: []
+
+# Model input features present in the raw data.
+categorical_features: [region, location]
+numeric_features:
+  - inventory
+  - mortgage_rate
+  - days_on_market
+  - sale_to_list_ratio
+  - new_listings
+
+# Leakage-safe engineered history: lags shift by >= 1 and rolling means are
+# computed on shift(1), grouped by entity_col.
+lags: [1, 2, 3]
+rolling_windows: [3, 6]
+
+# Display formatting for the dashboard (optional).
+target_unit: "$"
