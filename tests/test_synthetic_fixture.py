@@ -32,7 +32,8 @@ def test_multiple_locations_per_region():
     df = small_df()
     locations_per_region = df.groupby("region")["location"].nunique()
     assert locations_per_region["AA"] == 2
-    assert df["location"].dtype == object  # identifiers stay strings
+    assert pd.api.types.is_string_dtype(df["location"])
+    assert df["location"].map(lambda value: isinstance(value, str)).all()
 
 
 def test_monthly_continuity_per_location():
