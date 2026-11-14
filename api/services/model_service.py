@@ -1,128 +1,140 @@
-import json
 import logging
 import threading
+import time
 
+from src.modeling.artifacts import BundleError, ModelBundle, resolve_bundle
 from src.modeling.predict import Forecaster
-from src.utils.paths import METADATA_DIR, SAVED_MODELS_DIR
+from src.utils.paths import MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH = SAVED_MODELS_DIR / "trend_model.keras"
-
 
 class ModelService:
-    """Thread-safe lazy singleton around the trained model.
+    """Load complete candidates off-thread and swap only after validation.
 
-    Loading TensorFlow and the saved model can take several seconds, so the
-    API warms the instance up in a background thread at startup
-    (``warm_up_async``) and ``/health`` reads ``status()`` without ever
-    triggering a blocking load.
-
-    The service also watches the model file's mtime: when a newer model
-    appears on disk (e.g. after training from the dashboard), the next
-    health check triggers a background reload — no API restart needed.
+    Requests keep their service snapshot for their whole prediction. A failed
+    reload leaves the last working model/preprocessor/metadata together in memory.
     """
 
     _instance = None
     _lock = threading.Lock()
     _loading = False
+    _initialized = False
+    _reload_failed = False
+    _retry_after = 0.0
+    RETRY_SECONDS = 5.0
 
     @classmethod
     def get_instance(cls):
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._loading = True
-                    try:
-                        cls._instance = cls()
-                    finally:
-                        cls._loading = False
-        return cls._instance
-
-    @staticmethod
-    def _model_mtime() -> float | None:
-        try:
-            return MODEL_PATH.stat().st_mtime
-        except OSError:
-            return None
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = cls()
+            instance = cls._instance
+        cls.ensure_fresh_async()
+        return instance
 
     @classmethod
     def _is_stale(cls) -> bool:
-        """True when a model file exists that the current instance hasn't
-        loaded (first load or a newer file written by training)."""
-        mtime = cls._model_mtime()
-        if mtime is None:
+        try:
+            bundle = resolve_bundle(MODELS_DIR)
+        except (BundleError, OSError):
+            return True
+        if bundle is None:
             return False
         instance = cls._instance
-        if instance is None or not instance.is_loaded:
-            return True
-        return (instance.loaded_mtime or 0) < mtime
+        return instance is None or instance.loaded_revision != bundle.revision
 
     @classmethod
     def _reload_if_stale(cls):
-        with cls._lock:
-            if not cls._is_stale():
-                return
-            cls._loading = True
-            try:
-                cls._instance = cls()
-                logger.info("Model (re)loaded from %s.", MODEL_PATH)
-            finally:
+        try:
+            bundle = resolve_bundle(MODELS_DIR)
+            instance = cls._instance
+            if bundle is not None and (
+                instance is None or instance.loaded_revision != bundle.revision
+            ):
+                candidate = cls(bundle)
+                if not candidate.is_loaded:
+                    raise BundleError("Candidate model could not be loaded")
+                # Legacy files are mutable; refuse a mixed snapshot during migration.
+                if bundle.legacy and resolve_bundle(MODELS_DIR) != bundle:
+                    raise BundleError("Legacy artifacts changed while loading")
+                with cls._lock:
+                    cls._instance = candidate
+                logger.info("Model bundle loaded: %s", bundle.bundle_id)
+            with cls._lock:
+                cls._reload_failed = False
+        except Exception:
+            logger.exception("Model reload failed; retaining the previous working bundle")
+            with cls._lock:
+                cls._reload_failed = True
+        finally:
+            with cls._lock:
+                cls._initialized = True
                 cls._loading = False
+                cls._retry_after = time.monotonic() + cls.RETRY_SECONDS
 
     @classmethod
     def warm_up_async(cls) -> None:
-        """Load (or reload) the model in the background so requests don't
-        pay the TensorFlow import + model load cost."""
-        if cls._loading:
-            return
-
-        def _load():
-            try:
-                if cls._instance is None:
-                    cls.get_instance()
-                else:
-                    cls._reload_if_stale()
-                logger.info("Model warm-up complete.")
-            except Exception:  # noqa: BLE001 - warm-up must never crash the API
-                logger.exception("Model warm-up failed; will retry on next check.")
-
-        threading.Thread(target=_load, name="model-warm-up", daemon=True).start()
+        with cls._lock:
+            if cls._loading or time.monotonic() < cls._retry_after:
+                return
+            cls._loading = True
+        threading.Thread(target=cls._reload_if_stale, name="model-warm-up", daemon=True).start()
 
     @classmethod
     def ensure_fresh_async(cls) -> None:
-        """Kick off a background reload when the on-disk model is newer than
-        the loaded one. Cheap (a single stat) and non-blocking."""
-        if cls._is_stale():
+        if not cls._initialized or cls._is_stale():
             cls.warm_up_async()
 
     @classmethod
     def status(cls) -> dict:
-        """Non-blocking snapshot for health checks."""
-        instance = cls._instance
-        return {
-            "initialized": instance is not None,
-            "loading": cls._loading,
-            "model_loaded": bool(instance.is_loaded) if instance else False,
-            "metadata_exists": bool(instance.metadata) if instance else False,
-        }
+        with cls._lock:
+            instance = cls._instance
+            return {
+                "initialized": cls._initialized,
+                "loading": cls._loading,
+                "model_loaded": bool(instance and instance.is_loaded),
+                "metadata_exists": bool(instance and instance.metadata),
+                "model_version": (
+                    instance.metadata.get("model_version")
+                    if instance and instance.metadata
+                    else None
+                ),
+                "reload_failed": cls._reload_failed,
+            }
 
-    def __init__(self):
-        self.forecaster = Forecaster()
-        self.is_loaded = self.forecaster.load()
-        self.loaded_mtime = self._model_mtime() if self.is_loaded else None
-        self.metadata = self._load_metadata()
+    @staticmethod
+    def model_file_exists() -> bool:
+        try:
+            bundle = resolve_bundle(MODELS_DIR)
+            return bundle is not None and bundle.model_path.is_file()
+        except (BundleError, OSError):
+            return False
 
-    def _load_metadata(self):
-        metadata_path = METADATA_DIR / "model_metadata.json"
-        if metadata_path.exists():
-            with open(metadata_path, "r") as f:
-                return json.load(f)
-        return None
+    def __init__(self, bundle: ModelBundle | None = None):
+        self.is_loaded = False
+        self.metadata = None
+        self.forecaster = None
+        self.loaded_revision = None
+        if bundle is not None:
+            metadata = bundle.validate()
+            forecaster = Forecaster(bundle.model_path, bundle.preprocessor_path)
+            if not forecaster.load():
+                raise BundleError("Model or preprocessor could not be loaded")
+            columns = list(forecaster.preprocessor.feature_names_in_)
+            if columns != metadata["feature_columns"]:
+                raise BundleError("Preprocessor columns do not match bundle metadata")
+            width = len(forecaster.preprocessor.get_feature_names_out())
+            if forecaster.model.input_shape[-1] != width:
+                raise BundleError("Model input size does not match the preprocessor")
+            self.forecaster = forecaster
+            self.metadata = metadata
+            self.loaded_revision = bundle.revision
+            self.is_loaded = True
 
     def predict(self, df):
         if not self.is_loaded:
-            raise RuntimeError("Model is not loaded.")
+            raise RuntimeError("Model is not loaded")
         return self.forecaster.predict(df)
 
     def get_metadata(self):

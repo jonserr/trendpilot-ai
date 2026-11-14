@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from src.data.preprocess import load_preprocessor
-from src.utils.paths import METADATA_DIR, SAVED_MODELS_DIR
+from src.modeling.artifacts import resolve_bundle
 
 logger = logging.getLogger(__name__)
 
@@ -15,8 +15,8 @@ class Forecaster:
 
     def __init__(
         self,
-        model_path: Path = SAVED_MODELS_DIR / "trend_model.keras",
-        preprocessor_path: Path = METADATA_DIR / "preprocessor.joblib",
+        model_path: Path | None = None,
+        preprocessor_path: Path | None = None,
     ):
         self.model_path = model_path
         self.preprocessor_path = preprocessor_path
@@ -26,6 +26,15 @@ class Forecaster:
     def load(self) -> bool:
         """Loads the model and preprocessor if they exist. Fails soft (the
         API reports model_loaded=False) when TensorFlow is unavailable."""
+        if self.model_path is None and self.preprocessor_path is None:
+            bundle = resolve_bundle()
+            if bundle is None:
+                return False
+            bundle.validate()
+            self.model_path = bundle.model_path
+            self.preprocessor_path = bundle.preprocessor_path
+        if self.model_path is None or self.preprocessor_path is None:
+            raise ValueError("Model and preprocessor paths must be provided together")
         if self.model_path.exists() and self.preprocessor_path.exists():
             try:
                 import tensorflow as tf

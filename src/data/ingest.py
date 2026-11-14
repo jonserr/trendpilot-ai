@@ -438,4 +438,11 @@ def parse_args(argv=None):
 
 
 if __name__ == "__main__":
-    run_ingestion(parse_args())
+    from src.modeling.artifacts import TrainingInProgressError, training_lock
+
+    args = parse_args()
+    try:
+        with training_lock():
+            run_ingestion(args)
+    except TrainingInProgressError as exc:
+        raise SystemExit(str(exc)) from None

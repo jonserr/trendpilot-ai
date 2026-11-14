@@ -5,6 +5,7 @@ defaults -> tuned hyperparameters saved by `make tune` -> environment variables
 (EPOCHS, BATCH_SIZE, LEARNING_RATE) set e.g. by the dashboard training page.
 """
 
+import argparse
 import json
 import os
 import sys
@@ -21,12 +22,19 @@ from src.data.preprocess import (  # noqa: E402
     save_preprocessor,
     time_aware_split,
 )
+from src.modeling.artifacts import (  # noqa: E402
+    ModelBundle,
+    TrainingInProgressError,
+    publish_bundle,
+    stage_bundle,
+    training_lock,
+)
+from src.modeling.predict import Forecaster  # noqa: E402
 from src.modeling.baseline import BaselineModel  # noqa: E402
 from src.modeling.evaluate import calculate_metrics  # noqa: E402
 from src.modeling.keras_model import DEFAULT_HPARAMS, build_dense_forecaster  # noqa: E402
 from src.utils.paths import (  # noqa: E402
-    METADATA_DIR,
-    SAVED_MODELS_DIR,
+    MODELS_DIR,
     TUNING_DIR,
     ensure_dirs,
 )
@@ -71,6 +79,7 @@ def prepare_training_data():
         "X_test": X_test,
         "y_test": test_df[cfg.target_col],
         "preprocessor": preprocessor,
+        "validation_sample": test_df[feature_cols].head(1),
         "feature_cols": feature_cols,
         "numeric_features": numeric_features,
         "categorical_features": categorical_features,
@@ -78,7 +87,20 @@ def prepare_training_data():
     }
 
 
-def run_training_pipeline():
+def run_training_pipeline(
+    *, refresh_data: bool = False, level: str = "metro", max_entities: int = 50
+) -> ModelBundle:
+    # Dashboard, CLI, scheduled and manually created Jobs all take the same lock.
+    with training_lock(MODELS_DIR):
+        if refresh_data:
+            from src.data.ingest import parse_args, run_ingestion
+
+            run_ingestion(parse_args(["--level", level, "--max-entities", str(max_entities)]))
+        with stage_bundle(MODELS_DIR) as bundle:
+            return _train_bundle(bundle)
+
+
+def _train_bundle(bundle: ModelBundle) -> ModelBundle:
     from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint
     from tensorflow.keras.models import load_model
 
@@ -90,7 +112,7 @@ def run_training_pipeline():
     X_val, y_val = prepared["X_val"], prepared["y_val"]
     X_test, y_test = prepared["X_test"], prepared["y_test"]
 
-    save_preprocessor(prepared["preprocessor"], METADATA_DIR / "preprocessor.joblib")
+    save_preprocessor(prepared["preprocessor"], bundle.preprocessor_path)
 
     # Resolve hyperparameters: defaults <- tuned <- env overrides
     tuned = load_tuned_hyperparameters()
@@ -109,7 +131,7 @@ def run_training_pipeline():
 
     print("Training Keras Model...")
     model = build_dense_forecaster(X_train.shape[1], hparams)
-    model_path = str(SAVED_MODELS_DIR / "trend_model.keras")
+    model_path = str(bundle.model_path)
     callbacks = [
         EarlyStopping(patience=10, restore_best_weights=True),
         ModelCheckpoint(model_path, save_best_only=True),
@@ -133,7 +155,7 @@ def run_training_pipeline():
     metadata = {
         "model_name": "trend_model.keras",
         "model_type": "Dense Neural Network",
-        "model_version": datetime.now().strftime("%Y%m%d-%H%M%S"),
+        "model_version": bundle.bundle_id,
         "training_date": datetime.now().isoformat(),
         "hyperparameters": hparams,
         "used_tuned_hyperparameters": tuned is not None,
@@ -151,11 +173,34 @@ def run_training_pipeline():
         "metrics": keras_metrics,
         "baseline_metrics": baseline_metrics,
     }
-    with open(METADATA_DIR / "model_metadata.json", "w") as f:
-        json.dump(metadata, f, indent=4)
+    with bundle.metadata_path.open("w") as handle:
+        json.dump(metadata, handle, indent=4, allow_nan=False)
 
-    print("Training complete! Artifacts saved.")
+    # Probe the serialized model/preprocessor together before making them visible.
+    import math
+
+    candidate = Forecaster(bundle.model_path, bundle.preprocessor_path)
+    if not candidate.load():
+        raise RuntimeError("Trained bundle could not be reloaded")
+    probe = candidate.predict(prepared["validation_sample"])
+    if not probe or not all(math.isfinite(value) for value in probe):
+        raise RuntimeError("Trained bundle failed prediction validation")
+    published = publish_bundle(bundle)
+    print(f"Training complete! Published model bundle {published.bundle_id}.")
+    return published
 
 
 if __name__ == "__main__":
-    run_training_pipeline()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--refresh-data", action="store_true")
+    parser.add_argument(
+        "--level", default="metro", choices=["metro", "state", "county", "city", "zip"]
+    )
+    parser.add_argument("--max-entities", type=int, default=50)
+    args = parser.parse_args()
+    try:
+        run_training_pipeline(
+            refresh_data=args.refresh_data, level=args.level, max_entities=args.max_entities
+        )
+    except TrainingInProgressError as exc:
+        parser.exit(2, f"{exc}\n")
