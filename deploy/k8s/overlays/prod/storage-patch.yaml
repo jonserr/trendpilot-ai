@@ -1,0 +1,12 @@
+# ReadWriteMany lets API replicas spread across nodes.
+# Cluster default StorageClass must support RWX (for example EFS, Filestore, Azure Files, NFS, Longhorn).
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trendpilot-storage
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi

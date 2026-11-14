@@ -1,0 +1,27 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Environment-agnostic base. Overlays set namespace, image tags, storage, and secrets.
+resources:
+  - pvc.yaml
+  - api.yaml
+  - dashboard.yaml
+  - retrain-cronjob.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: trendpilot
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+configMapGenerator:
+  - name: trendpilot-config
+    literals:
+      - PYTHONPATH=/app
+      - TRENDPILOT_CONFIG=config/dataset.yaml
+      # Non-root pods need writable HOME for Keras, Matplotlib, and Streamlit caches
+      - HOME=/tmp
+      - API_URL=http://trendpilot-api:8000
+
+# Container images use placeholder names trendpilot-api and trendpilot-dashboard.
+# Overlays pin registry and tag with the images: field.

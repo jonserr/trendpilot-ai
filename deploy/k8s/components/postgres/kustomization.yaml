@@ -1,0 +1,8 @@
+# Optional in-cluster PostgreSQL for prediction-history logging.
+# Mirrors docker compose "db" profile. Use managed PostgreSQL for production.
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+
+resources:
+  - postgres.yaml
+  - networkpolicy.yaml

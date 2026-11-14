@@ -1,0 +1,29 @@
+# Dev tracks main with full automation
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trendpilot-dev
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: trendpilot
+  source:
+    repoURL: https://github.com/jonserr/trendpilot-ai.git
+    targetRevision: main
+    path: deploy/k8s/overlays/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: trendpilot-dev
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 3m

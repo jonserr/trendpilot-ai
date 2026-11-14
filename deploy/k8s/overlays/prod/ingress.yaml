@@ -1,0 +1,86 @@
+# Requires Traefik v3 with both kubernetesIngress and kubernetesCRD providers.
+# Middleware references include the fixed production namespace; update if renamed.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trendpilot-dashboard
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.options: trendpilot-strict-tls@kubernetescrd
+    traefik.ingress.kubernetes.io/router.middlewares: trendpilot-dashboard-auth@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - trendpilot.example.com
+      secretName: trendpilot-tls
+  rules:
+    - host: trendpilot.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: trendpilot-dashboard
+                port:
+                  name: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trendpilot-api
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+    traefik.ingress.kubernetes.io/router.tls.options: trendpilot-strict-tls@kubernetescrd
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - api.trendpilot.example.com
+      secretName: trendpilot-tls
+  rules:
+    - host: api.trendpilot.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: trendpilot-api
+                port:
+                  name: http
+---
+# Plain HTTP only redirects. It never forwards unauthenticated traffic to a backend.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: trendpilot-https-redirect
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.middlewares: trendpilot-https-redirect@kubernetescrd
+spec:
+  ingressClassName: traefik
+  rules:
+    - host: trendpilot.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: trendpilot-dashboard
+                port:
+                  name: http
+    - host: api.trendpilot.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: trendpilot-api
+                port:
+                  name: http

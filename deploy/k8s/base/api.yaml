@@ -1,0 +1,125 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trendpilot-api
+  labels:
+    app.kubernetes.io/name: trendpilot-api
+    app.kubernetes.io/component: api
+spec:
+  replicas: 1
+  # Recreate avoids two pods on two nodes contending for ReadWriteOnce volume
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trendpilot-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: trendpilot-api
+        app.kubernetes.io/component: api
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      # Creates storage subdirectories as pod user before subPath mounts resolve
+      initContainers:
+        - name: init-storage
+          image: trendpilot-api
+          command:
+            - sh
+            - -c
+            - mkdir -p /storage/raw /storage/processed /storage/sample /storage/models/saved /storage/models/metadata
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: storage
+              mountPath: /storage
+      containers:
+        - name: api
+          image: trendpilot-api
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: trendpilot-config
+            # Optional keys: API_KEY, DATABASE_URL. Absent secret keeps API open and logging off.
+            - secretRef:
+                name: trendpilot-secrets
+                optional: true
+          # Liveness/startup check the process; readiness requires a validated model.
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 5
+            failureThreshold: 24
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              memory: 2Gi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: storage
+              mountPath: /app/data/raw
+              subPath: raw
+            - name: storage
+              mountPath: /app/data/processed
+              subPath: processed
+            - name: storage
+              mountPath: /app/models
+              subPath: models
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: storage
+          persistentVolumeClaim:
+            claimName: trendpilot-storage
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: trendpilot-api
+  labels:
+    app.kubernetes.io/name: trendpilot-api
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    app.kubernetes.io/name: trendpilot-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http

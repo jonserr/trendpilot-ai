@@ -1,0 +1,22 @@
+# App-of-apps entry point. Apply once: kubectl apply -n argocd -f deploy/argocd/root-app.yaml
+# Argo CD then manages AppProject and environment Applications in deploy/argocd/apps.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trendpilot-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/jonserr/trendpilot-ai.git
+    targetRevision: main
+    path: deploy/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

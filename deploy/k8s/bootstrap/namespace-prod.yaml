@@ -1,0 +1,8 @@
+# Administrative bootstrap only. Not managed by the workload Application.
+# Never add this directory to the root app-of-apps source.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: trendpilot
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false

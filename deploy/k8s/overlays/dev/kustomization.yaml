@@ -1,0 +1,40 @@
+# Local cluster overlay (kind, minikube, Docker Desktop).
+# Uses locally built images and in-cluster PostgreSQL.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: trendpilot-dev
+
+resources:
+  - namespace.yaml
+  - ../../base
+
+components:
+  - ../../components/postgres
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: trendpilot-dev
+    includeSelectors: false
+
+images:
+  - name: trendpilot-api
+    newName: trendpilot-api
+    newTag: dev
+  - name: trendpilot-dashboard
+    newName: trendpilot-dashboard
+    newTag: dev
+
+# Dev-only credentials, identical to Docker Compose defaults. Never reuse outside local clusters.
+secretGenerator:
+  - name: trendpilot-postgres
+    literals:
+      - POSTGRES_USER=trendpilot
+      - POSTGRES_PASSWORD=trendpilot
+      - POSTGRES_DB=trendpilot
+  - name: trendpilot-secrets
+    literals:
+      - DATABASE_URL=postgresql+psycopg2://trendpilot:trendpilot@trendpilot-postgres:5432/trendpilot
+
+patches:
+  - path: retrain-cronjob-patch.yaml

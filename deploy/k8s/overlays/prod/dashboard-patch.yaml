@@ -1,0 +1,19 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: trendpilot-dashboard
+spec:
+  template:
+    spec:
+      containers:
+        - name: dashboard
+          # Sends API_KEY as X-API-Key header. Pod does not start without it.
+          env:
+            - name: API_KEY_REQUIRED
+              value: "true"
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: trendpilot-secrets
+                  key: API_KEY
+                  optional: false

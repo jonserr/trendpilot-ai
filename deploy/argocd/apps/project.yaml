@@ -1,0 +1,48 @@
+# Limits Trendpilot Applications to this repository and Trendpilot namespaces
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: trendpilot
+  namespace: argocd
+  annotations:
+    # Creates project before Applications that reference it
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Trendpilot AI forecasting platform
+  sourceRepos:
+    - https://github.com/jonserr/trendpilot-ai.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: trendpilot
+    - server: https://kubernetes.default.svc
+      namespace: trendpilot-dev
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: traefik.io
+      kind: Middleware
+    - group: traefik.io
+      kind: TLSOption
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: Secret
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: apps
+      kind: Deployment
+    - group: apps
+      kind: StatefulSet
+    - group: batch
+      kind: CronJob
+    - group: batch
+      kind: Job
+    - group: networking.k8s.io
+      kind: Ingress
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: policy
+      kind: PodDisruptionBudget

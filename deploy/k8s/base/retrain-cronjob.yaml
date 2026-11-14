@@ -1,0 +1,81 @@
+# Monthly data refresh and retrain. Redfin publishes monthly updates.
+# API reloads a validated bundle on its next /ready or /health probe.
+# First run: kubectl create job --from=cronjob/trendpilot-retrain trendpilot-retrain-init
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trendpilot-retrain
+  labels:
+    app.kubernetes.io/name: trendpilot-retrain
+    app.kubernetes.io/component: training
+spec:
+  schedule: "0 6 3 * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 2
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: 7200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: trendpilot-retrain
+            app.kubernetes.io/component: training
+        spec:
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      app.kubernetes.io/name: trendpilot-api
+                  topologyKey: kubernetes.io/hostname
+          containers:
+            - name: train
+              image: trendpilot-api
+              command: ["python", "src/modeling/train.py"]
+              # One process holds the shared writer lock across refresh and training.
+              args: ["--refresh-data", "--level", "metro", "--max-entities", "50"]
+              envFrom:
+                - configMapRef:
+                    name: trendpilot-config
+              resources:
+                requests:
+                  cpu: 500m
+                  memory: 1Gi
+                limits:
+                  memory: 3Gi
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities:
+                  drop: ["ALL"]
+              volumeMounts:
+                - name: storage
+                  mountPath: /app/data/raw
+                  subPath: raw
+                - name: storage
+                  mountPath: /app/data/sample
+                  subPath: sample
+                - name: storage
+                  mountPath: /app/data/processed
+                  subPath: processed
+                - name: storage
+                  mountPath: /app/models
+                  subPath: models
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: storage
+              persistentVolumeClaim:
+                claimName: trendpilot-storage
+            - name: tmp
+              emptyDir: {}

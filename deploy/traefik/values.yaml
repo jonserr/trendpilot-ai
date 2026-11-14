@@ -1,0 +1,21 @@
+# Administrative infrastructure prerequisite, outside the workload Argo application.
+# Use a reviewed, pinned Traefik v3 chart/image with its matching CRDs.
+ingressClass:
+  enabled: true
+  isDefaultClass: false
+  name: traefik
+providers:
+  kubernetesIngress:
+    enabled: true
+    ingressClass: traefik
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: false
+    # Annotation references in this repo use the namespace-name naming convention.
+    safeNaming: false
+ingressRoute:
+  dashboard:
+    enabled: false
+additionalArguments:
+  # Keep idle Streamlit WebSocket sessions open; no Upgrade-header rewrites needed.
+  - --entrypoints.websecure.transport.respondingtimeouts.idletimeout=3600s

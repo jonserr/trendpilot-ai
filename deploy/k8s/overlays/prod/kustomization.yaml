@@ -1,0 +1,44 @@
+# Production overlay. Pulls versioned images from GHCR.
+# Secret trendpilot-secrets (API_KEY, DATABASE_URL) is created out of band.
+# See deploy/README.md.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: trendpilot
+
+resources:
+  - ../../base
+  - ingress.yaml
+  - middleware.yaml
+  - pdb.yaml
+
+labels:
+  - pairs:
+      app.kubernetes.io/instance: trendpilot-prod
+    includeSelectors: false
+
+# Bump newTag to release. Argo CD syncs the change.
+images:
+  - name: trendpilot-api
+    newName: ghcr.io/jonserr/trendpilot-api
+    newTag: "0.1.0"
+  - name: trendpilot-dashboard
+    newName: ghcr.io/jonserr/trendpilot-dashboard
+    newTag: "0.1.0"
+
+patches:
+  - path: storage-patch.yaml
+  - path: api-patch.yaml
+  - path: dashboard-patch.yaml
+  # Recreate is needed only for ReadWriteOnce storage
+  - target:
+      kind: Deployment
+      name: trendpilot-api
+    patch: |-
+      - op: replace
+        path: /spec/strategy
+        value:
+          type: RollingUpdate
+          rollingUpdate:
+            maxUnavailable: 0
+            maxSurge: 1

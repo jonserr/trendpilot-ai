@@ -1,0 +1,20 @@
+# Shared storage for datasets and trained models.
+# API reads models, dashboard and retrain job write them.
+# Subpaths: raw, processed (mounted under /app/data) and models (mounted at /app/models).
+# ReadWriteOnce requires all writers on one node. Pod affinity in api.yaml peers enforces this.
+# Prod overlay switches to ReadWriteMany.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: trendpilot-storage
+  labels:
+    app.kubernetes.io/name: trendpilot-storage
+  annotations:
+    # Retain on both sync pruning and Application cascading deletion.
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

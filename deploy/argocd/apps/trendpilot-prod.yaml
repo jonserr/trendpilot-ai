@@ -1,0 +1,23 @@
+# Prod syncs manually. Review diff in Argo CD, then sync.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trendpilot-prod
+  namespace: argocd
+  annotations:
+    # Parent root sync/deletion requires an explicit approval before removing prod.
+    argocd.argoproj.io/sync-options: Prune=confirm,Delete=confirm
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: trendpilot
+  source:
+    repoURL: https://github.com/jonserr/trendpilot-ai.git
+    targetRevision: main
+    path: deploy/k8s/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: trendpilot
+  syncPolicy:
+    syncOptions:
+      - PruneLast=true

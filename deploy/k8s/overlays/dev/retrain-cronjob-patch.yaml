@@ -1,0 +1,14 @@
+# Dev runs retrain on demand only, with state-level data (~5 MB download)
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: trendpilot-retrain
+spec:
+  suspend: true
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+            - name: train
+              args: ["--refresh-data", "--level", "state", "--max-entities", "0"]
