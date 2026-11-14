@@ -3,6 +3,15 @@ __pycache__/
 *$py.class
 *.so
 .env
+.env.*
+!.env.example
+secrets/
+.secrets/
+api-key
+api-key.*
+*.key
+*.pem
+auth
 .venv/
 venv/
 ENV/
@@ -37,3 +46,10 @@ data/raw/*
 data/processed/*
 !data/processed/.gitkeep
 .DS_Store
+
+# Immutable model bundles and the active pointer are runtime artifacts.
+models/bundles/
+models/current.json
+models/.current-*.json
+models/.training.lock
+.local-checks/

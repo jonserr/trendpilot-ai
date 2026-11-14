@@ -1,12 +1,9 @@
-import os
-
 import pandas as pd
 import requests
 import streamlit as st
 
+from app.api_client import API_URL, api_headers
 from src.config import get_config
-
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Prediction History", page_icon="🗄️")
 
@@ -31,7 +28,9 @@ if entity_filter:
 
 try:
     with st.spinner("Fetching prediction history…"):
-        res = requests.get(f"{API_URL}/prediction-history", params=params, timeout=10)
+        res = requests.get(
+            f"{API_URL}/prediction-history", params=params, timeout=10, headers=api_headers()
+        )
     if res.status_code != 200:
         st.error(f"API Error: {res.text}")
     else:

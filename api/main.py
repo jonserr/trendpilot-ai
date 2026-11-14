@@ -1,15 +1,21 @@
-import os
+import hmac
+import logging
 from contextlib import asynccontextmanager
+from importlib.metadata import version
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from api.routes import health, history, metadata, predict
 from api.services.model_service import ModelService
+from src.utils.secrets import SecretConfigurationError, get_api_key
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    get_api_key()  # Reject missing required keys and broken file configuration before serving.
     # Load TensorFlow + the model in the background so /health responds
     # immediately after boot instead of blocking for several seconds.
     ModelService.warm_up_async()
@@ -22,19 +28,23 @@ app = FastAPI(
         "Inference service for the Trendpilot forecasting platform. "
         "The feature schema is dataset-driven — see /dataset-schema."
     ),
-    version="3.0.0",
+    version=version("trendpilot-ai"),
     lifespan=lifespan,
 )
 
 
 @app.middleware("http")
 async def api_key_auth(request: Request, call_next):
-    """Optional API-key auth: set the API_KEY environment variable to require
-    an X-API-Key header on all endpoints except /health and the docs."""
-    expected = os.environ.get("API_KEY")
-    open_paths = {"/health", "/docs", "/openapi.json", "/redoc"}
+    """Authenticate protected endpoints; invalid secret configuration fails closed."""
+    try:
+        expected = get_api_key()
+    except SecretConfigurationError:
+        logger.error("API credential configuration is invalid")
+        return JSONResponse(status_code=503, content={"detail": "API authentication unavailable"})
+    open_paths = {"/health", "/ready", "/docs", "/openapi.json", "/redoc"}
     if expected and request.url.path not in open_paths:
-        if request.headers.get("X-API-Key") != expected:
+        supplied = request.headers.get("X-API-Key", "").encode("utf-8")
+        if not hmac.compare_digest(supplied, expected.encode("ascii")):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing API key"})
     return await call_next(request)
 

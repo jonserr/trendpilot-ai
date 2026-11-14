@@ -1,12 +1,11 @@
-import os
 import time
 
 import requests
 import streamlit as st
 
+from app.api_client import API_URL, api_headers
 from src.config import get_config
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
 API_WAIT_ATTEMPTS = 10
 
 st.set_page_config(page_title="Trendpilot AI", page_icon="📈", layout="wide")
@@ -32,7 +31,7 @@ Use the sidebar to navigate through the workflow:
 
 def check_api_health():
     try:
-        response = requests.get(f"{API_URL}/health", timeout=3)
+        response = requests.get(f"{API_URL}/health", timeout=3, headers=api_headers())
         if response.status_code == 200:
             return response.json()
     except requests.exceptions.RequestException:

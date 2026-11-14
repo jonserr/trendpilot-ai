@@ -1,12 +1,9 @@
-import os
-
 import requests
 import streamlit as st
 
+from app.api_client import API_URL, api_headers
 from app.data_cache import load_engineered_dataset, missing_data_message
 from src.config import get_config
-
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Scenario Simulator", page_icon="⚙️")
 
@@ -87,8 +84,12 @@ if st.button("Simulate Scenario", type="primary"):
 
     try:
         with st.spinner("Running base and scenario predictions…"):
-            base_res = requests.post(f"{API_URL}/predict", json=base_payload, timeout=30)
-            scenario_res = requests.post(f"{API_URL}/predict", json=scenario_payload, timeout=30)
+            base_res = requests.post(
+                f"{API_URL}/predict", json=base_payload, timeout=30, headers=api_headers()
+            )
+            scenario_res = requests.post(
+                f"{API_URL}/predict", json=scenario_payload, timeout=30, headers=api_headers()
+            )
 
         if base_res.status_code == 200 and scenario_res.status_code == 200:
             base_value = base_res.json()["predicted_value"]

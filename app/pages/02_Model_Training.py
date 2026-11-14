@@ -4,10 +4,10 @@ import subprocess
 import requests
 import streamlit as st
 
+from app.api_client import API_URL, api_headers
 from app.data_cache import missing_data_message
 from src.config import get_config
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
 LOG_TAIL_LINES = 30
 
 st.set_page_config(page_title="Model Training", page_icon="🧠")
@@ -21,6 +21,9 @@ Trigger the training pipeline for the TensorFlow/Keras neural network
 (`src/modeling/train.py`). Progress and logs stream live below; artifacts are
 saved to the shared `models/` volume and the inference API picks up the new
 model automatically — no restart needed.
+
+One training or data-refresh run can run at a time. Wait for an existing run
+to finish before starting another.
 """)
 
 data_available = cfg.data_path.exists()
@@ -64,6 +67,8 @@ if st.button("Train Model", type="primary", disabled=not data_available):
 
             if return_code == 0:
                 status.update(label="Training completed successfully ✅", state="complete")
+            elif return_code == 2:
+                status.update(label="Another training or data-refresh run is active", state="error")
             else:
                 status.update(label="Training failed", state="error")
 
@@ -71,13 +76,17 @@ if st.button("Train Model", type="primary", disabled=not data_available):
             st.success("Training complete — artifacts saved.")
             # Nudge the API so it reloads the new model in the background.
             try:
-                requests.get(f"{API_URL}/health", timeout=3)
+                requests.get(f"{API_URL}/health", timeout=3, headers=api_headers())
                 st.info(
                     "The inference API is reloading the new model in the background — "
                     "the home page will show it as loaded in a few seconds."
                 )
             except requests.exceptions.RequestException:
-                st.info("Start or refresh the API to load the new model.")
+                st.info(
+                    "Model published. The API will load it on its next readiness or health check."
+                )
+        elif return_code == 2:
+            st.warning("Another training or data-refresh run is active. Retry after it finishes.")
         else:
             st.error("Training failed — see the logs above for the reason.")
 

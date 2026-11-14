@@ -1,4 +1,23 @@
-.PHONY: install setup launch open lint format test fetch-data train tune api dashboard build up down clean clean-artifacts
+.DEFAULT_GOAL := install
+
+.PHONY: install setup launch open lint format test fetch-data train tune api dashboard build up down clean clean-artifacts api-key-init api-key-status api-key-rotate
+
+PYTHON ?= python3
+COMPOSE ?= docker compose
+
+# Idempotent; creates only this project's external credential, never a repo .env.
+api-key-init:
+	$(PYTHON) scripts/api_key.py init
+
+api-key-status:
+	$(PYTHON) scripts/api_key.py status
+
+# Recreate both consumers after rotation; `restart` may retain the old file mount.
+api-key-rotate:
+	$(PYTHON) scripts/api_key.py rotate
+	$(COMPOSE) up -d --build --force-recreate api dashboard
+
+lint format test fetch-data train tune api dashboard up: api-key-init
 
 # Scope for `make fetch-data` (Redfin market data + FRED rates).
 # LEVEL: metro (default, ~110 MB) | state (~5 MB) | county | city | zip (~1 GB)
@@ -6,7 +25,7 @@ LEVEL ?= metro
 STATES ?=
 MAX_ENTITIES ?= 50
 
-# Host ports (must match docker-compose defaults; exported so compose sees overrides).
+# Host ports (exported so Compose sees overrides).
 API_PORT ?= 9173
 DASHBOARD_PORT ?= 9174
 export API_PORT DASHBOARD_PORT
@@ -35,39 +54,39 @@ open:
 	$(OPEN_CMD) http://localhost:$(DASHBOARD_PORT)
 
 lint:
-	docker-compose run --rm api ruff check src api app tests
-	docker-compose run --rm api black --check src api app tests
+	$(COMPOSE) run --rm api ruff check src api app tests scripts
+	$(COMPOSE) run --rm api black --check src api app tests scripts
 
 format:
-	docker-compose run --rm api ruff check --fix src api app tests
-	docker-compose run --rm api black src api app tests
+	$(COMPOSE) run --rm api ruff check --fix src api app tests scripts
+	$(COMPOSE) run --rm api black src api app tests scripts
 
 test:
-	docker-compose run --rm api pytest
+	$(COMPOSE) run --rm api pytest
 
 fetch-data:
-	docker-compose run --rm api python src/data/ingest.py --level $(LEVEL) $(if $(STATES),--states $(STATES),) --max-entities $(MAX_ENTITIES)
+	$(COMPOSE) run --rm api python src/data/ingest.py --level $(LEVEL) $(if $(STATES),--states $(STATES),) --max-entities $(MAX_ENTITIES)
 
 train:
-	docker-compose run --rm api python src/modeling/train.py
+	$(COMPOSE) run --rm api python src/modeling/train.py
 
 tune:
-	docker-compose run --rm api python src/modeling/tuning.py
+	$(COMPOSE) run --rm api python src/modeling/tuning.py
 
 api:
-	docker-compose up -d api
+	$(COMPOSE) up -d --build api
 
 dashboard:
-	docker-compose up -d dashboard
+	$(COMPOSE) up -d --build dashboard
 
 build:
-	docker-compose build
+	$(COMPOSE) build
 
 up:
-	docker-compose up -d
+	$(COMPOSE) up -d --build
 
 down:
-	docker-compose down
+	$(COMPOSE) down
 
 # Safe: removes Python caches only. Never touches datasets or trained models.
 clean:
@@ -79,6 +98,6 @@ clean:
 # `make fetch-data` rebuilds the dataset without re-downloading.
 clean-artifacts:
 	@echo "Removing datasets and trained model artifacts (download cache is kept)..."
-	rm -rf data/raw/* data/processed/* models/saved/* models/metadata/*
+	rm -rf data/raw/* data/processed/* models/saved/* models/metadata/* models/bundles models/current.json
 	touch data/raw/.gitkeep data/processed/.gitkeep models/saved/.gitkeep models/metadata/.gitkeep
 	@echo "Done. Run 'make fetch-data && make train' to rebuild."

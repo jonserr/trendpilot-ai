@@ -1,12 +1,9 @@
-import os
-
 import requests
 import streamlit as st
 
+from app.api_client import API_URL, api_headers
 from app.data_cache import load_engineered_dataset
 from src.config import get_config
-
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 st.set_page_config(page_title="Forecast Viewer", page_icon="📈")
 
@@ -87,7 +84,9 @@ if st.button("Get Forecast", type="primary"):
 
     try:
         with st.spinner("Requesting forecast from the inference API…"):
-            res = requests.post(f"{API_URL}/predict", json=payload, timeout=30)
+            res = requests.post(
+                f"{API_URL}/predict", json=payload, timeout=30, headers=api_headers()
+            )
         if res.status_code == 200:
             data = res.json()
             unit = cfg.target_unit or ""

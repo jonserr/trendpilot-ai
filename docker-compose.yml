@@ -7,7 +7,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     ports:
-      - "${API_PORT:-9173}:8000"
+      - "127.0.0.1:${API_PORT:-9173}:8000"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -16,8 +16,10 @@ services:
       - PYTHONPATH=/app
       # Optional: enables PostgreSQL prediction logging (see .env.example)
       - DATABASE_URL=${DATABASE_URL:-}
-      # Optional: require X-API-Key on API endpoints (see .env.example)
-      - API_KEY=${API_KEY:-}
+      - API_KEY_FILE=/run/secrets/trendpilot_api_key
+      - API_KEY_REQUIRED=true
+    secrets:
+      - trendpilot_api_key
     healthcheck:
       test: ["CMD", "curl", "-fsS", "http://localhost:8000/health"]
       interval: 5s
@@ -30,7 +32,7 @@ services:
       context: .
       dockerfile: Dockerfile.dashboard
     ports:
-      - "${DASHBOARD_PORT:-9174}:8501"
+      - "127.0.0.1:${DASHBOARD_PORT:-9174}:8501"
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -38,12 +40,16 @@ services:
     environment:
       - API_URL=http://api:8000
       - PYTHONPATH=/app
+      - API_KEY_FILE=/run/secrets/trendpilot_api_key
+      - API_KEY_REQUIRED=true
+    secrets:
+      - trendpilot_api_key
     depends_on:
       api:
         condition: service_healthy
 
   # Optional local PostgreSQL for prediction-history logging.
-  # Start with: docker-compose --profile db up -d
+  # Start with: docker compose --profile db up -d
   # Then set: DATABASE_URL=postgresql+psycopg2://trendpilot:trendpilot@db:5432/trendpilot
   db:
     image: postgres:16-alpine
@@ -53,9 +59,15 @@ services:
       - POSTGRES_PASSWORD=trendpilot
       - POSTGRES_DB=trendpilot
     ports:
-      - "${POSTGRES_PORT:-9175}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-9175}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
 volumes:
   postgres_data:
+
+# Only the path is interpolated. The value is mounted read-only into the two services.
+# Initialize once with `make api-key-init`; never put the key in .env.
+secrets:
+  trendpilot_api_key:
+    file: ${TRENDPILOT_API_KEY_FILE:-${HOME}/.config/trendpilot-ai/api-key}

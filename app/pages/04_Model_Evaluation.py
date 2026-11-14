@@ -1,9 +1,7 @@
-import os
-
 import requests
 import streamlit as st
 
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
+from app.api_client import API_URL, api_headers
 
 st.set_page_config(page_title="Model Evaluation", page_icon="🎯")
 
@@ -13,7 +11,7 @@ st.title("🎯 Model Evaluation")
 @st.cache_data
 def fetch_metadata():
     try:
-        response = requests.get(f"{API_URL}/model-metadata", timeout=2)
+        response = requests.get(f"{API_URL}/model-metadata", timeout=2, headers=api_headers())
         if response.status_code == 200:
             return response.json()
     except Exception:
