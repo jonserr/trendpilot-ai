@@ -57,7 +57,7 @@ def run_tuning(max_trials: int | None = None, epochs: int | None = None):
     except ImportError as exc:
         raise SystemExit(
             "keras-tuner is not installed. Install the optional tuning extra:\n"
-            "  pip install -e .[tuning]\n"
+            "  uv sync --locked --extra tuning\n"
             "or rebuild the Docker image (it includes the extra by default)."
         ) from exc
 

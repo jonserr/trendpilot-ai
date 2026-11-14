@@ -1,12 +1,19 @@
+[build-system]
+requires = ["setuptools==84.2.1"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "trendpilot-ai"
 version = "0.2.0"
 description = "A containerized end-to-end machine learning forecasting platform."
-authors = [{ name = "Author" }]
-requires-python = ">=3.10"
+authors = [{ name = "Jonathan Serrano" }]
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.12,<3.13"
 dependencies = [
-    "tensorflow>=2.15.0; sys_platform != 'darwin' or platform_machine != 'arm64'",
-    "tensorflow-macos>=2.15.0; sys_platform == 'darwin' and platform_machine == 'arm64'",
+    "tensorflow>=2.21,<2.22; sys_platform != 'darwin'",
+    "tensorflow>=2.19,<2.20; sys_platform == 'darwin' and platform_machine != 'x86_64'",
+    "tensorflow>=2.16.2,<2.17; sys_platform == 'darwin' and platform_machine == 'x86_64'",
     "pandas",
     "numpy",
     "scikit-learn",
@@ -36,13 +43,23 @@ db = [
     "psycopg2-binary",
 ]
 
+[tool.uv]
+required-version = "==0.13.8"
+# Use a compatible TensorFlow/PyArrow combination for native macOS development.
+# https://github.com/tensorflow/tensorflow/issues/98563
+constraint-dependencies = ["pyarrow<18; sys_platform == 'darwin'"]
+
 [tool.ruff]
 line-length = 100
-target-version = "py310"
+target-version = "py312"
+
+[tool.ruff.lint]
+# Preserve the project's original Ruff baseline across tool-default changes.
+select = ["E4", "E7", "E9", "F"]
 
 [tool.black]
 line-length = 100
-target-version = ["py310"]
+target-version = ["py312"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
